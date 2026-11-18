@@ -1,0 +1,27 @@
+# Local dependencies, private credentials, experiments, and generated builds
+/work/
+/build/
+/dist/
+/local-install-backup/
+/.venv/
+/.test-assets/
+/.test-audio/
+/.migration/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+*.spec
+.env
+*.pem
+*.key
+*.p8
+**/auth.json
+**/dialogs.json
+**/settings.json
+**/registration.json
+**/vpn-servers.json
+**/mute-state.json
+*.log
+*.sqlite3*
+
+/_to-delete/

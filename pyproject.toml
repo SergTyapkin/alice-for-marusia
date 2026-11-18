@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alice-for-marusia"
+version = "0.1.0"
+description = "On-device GPT voice companion for the large VK Capsula"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{name = "Alice for Marusia contributors"}]
+
+[project.optional-dependencies]
+build = ["edge-tts==7.3.1", "pyinstaller>=6.22,<7"]
+
+[project.urls]
+Repository = "https://github.com/SergTyapkin/alice-for-marusia"
+Issues = "https://github.com/SergTyapkin/alice-for-marusia/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+alice_for_marusia = ["static/*.html", "static/*.css", "static/*.js"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 110

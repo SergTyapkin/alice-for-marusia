@@ -1,0 +1,58 @@
+#!/bin/sh
+R=/tmp/alisa-runtime
+PID=/run/alisa.pid
+start_worker() {
+    # At early boot the proxy can run before /data is ready; retry later.
+    ( sleep 12; /etc/init.d/S98xray start ) >/tmp/alisa-xray-start.log 2>&1 &
+    mkdir -p "$R" /tmp/sherpa-test || exit 1
+    runtime_hash=$(sha256sum /data/alisa/runtime.tar.gz | cut -d ' ' -f 1)
+    if [ "$(cat "$R/.archive-sha256" 2>/dev/null)" != "$runtime_hash" ]; then
+        gzip -dc /data/alisa/runtime.tar.gz | tar -xf - -C "$R" || exit 1
+        echo "$runtime_hash" > "$R/.archive-sha256"
+    fi
+    [ ! -s /data/alisa/alisa_mww_fast.json ] || cp /data/alisa/alisa_mww_fast.json "$R/alisa_mww.json"
+    sherpa_hash=$(sha256sum /data/alisa/sherpa.tar.gz | cut -d ' ' -f 1)
+    if [ "$(cat /tmp/sherpa-test/.archive-sha256 2>/dev/null)" != "$sherpa_hash" ]; then
+        gzip -dc /data/alisa/sherpa.tar.gz | tar -xf - -C /tmp/sherpa-test || exit 1
+        echo "$sherpa_hash" > /tmp/sherpa-test/.archive-sha256
+    fi
+    mkdir -p "$R/app" "$R/phrases" || exit 1
+    cp -R /data/alisa/app/alice_for_marusia "$R/app/" || exit 1
+    cp /data/alisa/alisa_mww.tflite "$R/alisa_mww.tflite" || exit 1
+    { [ -s /data/alisa/assets/wake.mp3 ] || [ -s /data/alisa/assets/wake.wav ]; } || exit 1
+    { [ -s /data/alisa/assets/ready.mp3 ] || [ -s /data/alisa/assets/ready.wav ]; } || exit 1
+    [ ! -s /data/alisa/ready.mp3 ] || cp /data/alisa/ready.mp3 "$R/phrases/ready.mp3"
+    for f in /data/alisa/phrases-cache/*.mp3; do [ ! -s "$f" ] || cp "$f" "$R/phrases/"; done
+    mkdir -p "$R/plugins" "$R/cache" || exit 1
+    for f in /usr/lib/alsa-lib/*; do [ -e "$f" ] && ln -sf "$f" "$R/plugins/"; done
+    for f in "$R"/glibc/usr/lib/aarch64-linux-gnu/alsa-lib/libasound_module_rate_speexrate*.so; do [ -e "$f" ] && ln -sf "$f" "$R/plugins/"; done
+    export ALISA_ROOT="$R" HOME="$R" PYTHONPATH="$R/app:$R/edge" PYTHONUTF8=1
+    export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+    export ALISA_OPENAI_PROXY=http://127.0.0.1:18780
+    export XDG_RUNTIME_DIR=/run/user/0
+    for i in $(seq 1 30); do pactl info >/dev/null 2>&1 && break; sleep 1; done
+    cd "$R" || exit 1
+    exec "$R/python/bin/python3.11" -m alice_for_marusia
+}
+case "$1" in
+ start)
+    if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; then exit 0; fi
+    start-stop-daemon -S -b -m -p "$PID" -x /etc/init.d/S99alisa -- run ;;
+ run) start_worker >> /tmp/alisa.log 2>&1 < /dev/null ;;
+ stop)
+    if [ -f "$PID" ]; then
+        worker_pid=$(cat "$PID")
+        kill "$worker_pid" 2>/dev/null
+        for i in $(seq 1 50); do
+            kill -0 "$worker_pid" 2>/dev/null || break
+            sleep .2
+        done
+        if kill -0 "$worker_pid" 2>/dev/null; then
+            echo "Alisa did not stop; refusing overlapping restart" >&2
+            exit 1
+        fi
+        rm -f "$PID"
+    fi ;;
+ restart) "$0" stop || exit 1; "$0" start ;;
+ *) exit 1 ;;
+esac

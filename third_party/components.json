@@ -1,0 +1,36 @@
+{
+  "python": {
+    "version": "3.11.18",
+    "source": "https://github.com/python/cpython/tree/v3.11.18"
+  },
+  "wake_runner": {
+    "version": "0.1.3",
+    "source": "https://github.com/akash-kamat/microwakeword-rs/tree/v0.1.3",
+    "sha256": "97a14b98e290d237a3eb524c913e2de4720fadc9d9983a7f80d8ab795e2d5f8b"
+  },
+  "speech_model": {
+    "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16.tar.bz2",
+    "sha256": "6ba68a01ff3c5445aaf2d61e9b97b026f1149dcc9049d11af3f44f55176341d8"
+  },
+  "sherpa_onnx": {
+    "version": "1.13.8",
+    "source": "https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.8"
+  },
+  "onnxruntime": {
+    "version": "1.28.2",
+    "source": "https://github.com/microsoft/onnxruntime/tree/v1.28.2"
+  },
+  "glibc": {
+    "version": "2.36-9+deb12u14",
+    "source": "https://deb.debian.org/debian/pool/main/g/glibc/"
+  },
+  "mpg123": {
+    "version": "1.26.4",
+    "source": "https://deb.debian.org/debian/pool/main/m/mpg123/"
+  },
+  "xray": {
+    "version": "26.11.9",
+    "source": "https://github.com/XTLS/Xray-core/tree/v26.11.9",
+    "sha256_gzip": "d7880d0864e7eb2d68185211e2b0191aeeb13faa375c5ce782a5281ed5d7f518"
+  }
+}

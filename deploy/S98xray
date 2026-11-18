@@ -1,0 +1,24 @@
+#!/bin/sh
+BIN=/tmp/alisa-xray
+CONFIG=/data/xray-test/config.json
+PID=/run/alisa-xray.pid
+case "$1" in
+ start)
+  if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; then exit 0; fi
+  [ -r /data/xray-test/xray.gz ] || exit 1
+  # A new installation has no provider config yet. Still prepare the binary
+  # so that the web UI can validate the first imported server.
+  if [ ! -x "$BIN" ]; then
+    gzip -dc /data/xray-test/xray.gz > "$BIN.new" || exit 1
+    chmod 700 "$BIN.new" && mv "$BIN.new" "$BIN" || exit 1
+  fi
+  [ -r "$CONFIG" ] || exit 0
+  "$BIN" run -test -config "$CONFIG" >/dev/null 2>&1 || exit 1
+  start-stop-daemon -S -b -m -p "$PID" -x "$BIN" -- run -config "$CONFIG"
+  ;;
+ stop)
+  [ ! -f "$PID" ] || { kill "$(cat "$PID")" 2>/dev/null; rm -f "$PID"; }
+  ;;
+ restart) "$0" stop; sleep 1; "$0" start ;;
+ *) exit 1 ;;
+esac
