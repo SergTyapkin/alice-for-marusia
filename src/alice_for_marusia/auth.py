@@ -4,9 +4,10 @@ The password is entered only at auth.openai.com. RS256 verification uses the
 standard library rather than installing a second crypto runtime on the speaker.
 """
 
-import base64, hashlib, json, secrets, threading, time, urllib.parse, uuid
+import base64, hashlib, json, secrets, threading, time, urllib.parse, uuid, re
 from .settings import DATA, read_json, write_json
 from .openai_client import AUTH_FILE, BASE, TOKEN_URL, _post, _open, credential_lock
+from .diagnostics import event
 import urllib.request
 
 ISSUER = "https://auth.openai.com"
@@ -145,6 +146,7 @@ class ChatLogin:
             ):
                 raise ValueError("Неполный ответ входа")
             self.status = "checking"
+        stage = "обмен одноразового кода"
         try:
             fields = {
                 "grant_type": "authorization_code",
@@ -161,10 +163,12 @@ class ChatLogin:
                 20,
             ) as r:
                 token = json.load(r)
+            stage = "получение ключей OpenAI"
             with _open(
                 urllib.request.Request(ISSUER + "/.well-known/jwks.json"), 15
             ) as r:
                 keys = json.load(r)
+            stage = "проверка личности"
             identity = validate_identity(token["id_token"], keys, client, p["nonce"])
             if p["subject"] and identity["sub"] != p["subject"]:
                 raise ValueError(
@@ -199,15 +203,34 @@ class ChatLogin:
             with self.lock:
                 if self.pending is not p:
                     raise ValueError("Вход отменён")
+                stage = "сохранение входа"
                 with credential_lock(AUTH_FILE):
                     write_json(AUTH_FILE, record)
                 self.pending = None
                 self.status = "done"
-        except Exception:
+        except Exception as error:
             with self.lock:
                 self.pending = None
                 self.status = "error"
-            raise
+            code = re.search(r"HTTP\s+(\d{3})", str(error))
+            status = code[1] if code else str(getattr(error, "code", ""))
+            event("LOGIN_ERROR", stage, type(error).__name__, status)
+            if type(error) is ValueError:
+                raise
+            suffix = " HTTP " + status + "." if status.isdigit() else ""
+            if isinstance(error, KeyError):
+                detail = "OpenAI вернул неполный ответ."
+            else:
+                detail = "Проверьте VPN и подключение колонки."
+            raise ValueError(
+                "Ошибка входа: "
+                + stage
+                + "."
+                + suffix
+                + " "
+                + detail
+                + " Начните вход заново."
+            ) from None
 
     def logout(self):
         with self.lock:

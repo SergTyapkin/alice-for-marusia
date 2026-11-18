@@ -1,45 +1,14 @@
-"""Create the source archive and the RK3308 installation payload."""
+"""Create the RK3308 installation payload. GitHub supplies source archives."""
 
 import argparse
 import hashlib
-import io
 import json
 from pathlib import Path
 import tarfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.1.0"
-
-
-def source_files():
-    for name in (
-        "README.md",
-        "LICENSE",
-        "SECURITY.md",
-        "THIRD_PARTY.md",
-        "pyproject.toml",
-        ".gitignore",
-        ".gitattributes",
-    ):
-        yield ROOT / name, name
-    for folder in (
-        "src",
-        "tests",
-        "tools",
-        "docs",
-        "deploy",
-        "config",
-        "third_party",
-        ".github",
-    ):
-        for path in sorted((ROOT / folder).rglob("*")):
-            if (
-                path.is_file()
-                and "__pycache__" not in path.parts
-                and path.suffix not in (".pyc", ".pyo")
-            ):
-                yield path, path.relative_to(ROOT).as_posix()
+VERSION = "0.1.1"
 
 
 def cleaned_runtime(source, destination):
@@ -79,18 +48,9 @@ def main():
     parser.add_argument("--sherpa", type=Path)
     parser.add_argument("--xray", type=Path)
     parser.add_argument("--assets", type=Path, default=ROOT / "build/assets")
-    parser.add_argument("--source-only", action="store_true")
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(
-        args.output / "AliceForMarusia-source.zip", "w", zipfile.ZIP_DEFLATED
-    ) as archive:
-        for path, name in source_files():
-            archive.write(path, "alice-for-marusia/" + name)
-    if args.source_only:
-        print("Source archive created")
-        return
     if not args.runtime or not args.sherpa:
         parser.error("--runtime and --sherpa are required")
     cleaned = ROOT / "build/runtime.tar.gz"
@@ -147,7 +107,7 @@ def main():
         for path in (ROOT / "third_party").rglob("*"):
             if path.is_file():
                 archive.write(path, path.relative_to(ROOT).as_posix())
-    print("Source and installation archives created")
+    print("Installation archive created")
 
 
 if __name__ == "__main__":

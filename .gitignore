@@ -20,6 +20,7 @@
 **/settings.json
 **/registration.json
 **/vpn-servers.json
+**/vpn-device.json
 **/mute-state.json
 *.log
 *.sqlite3*

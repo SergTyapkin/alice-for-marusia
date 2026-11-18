@@ -10,6 +10,10 @@ from . import vpn as vpn_config
 WEB = pathlib.Path(__file__).with_name("static")
 
 
+class OperationBusy(ValueError):
+    pass
+
+
 class Application:
     def __init__(self, readiness):
         self.readiness = readiness
@@ -17,6 +21,8 @@ class Application:
         self.csrf = secrets.token_urlsafe(32)
         self.job_lock = threading.Lock()
         self.job = {"running": False}
+        self.running_jobs = set()
+        self.jobs = {}
 
     def state(self):
         auth = read_json(AUTH_FILE, {})
@@ -40,21 +46,30 @@ class Application:
                 "connected": bool(auth.get("access_token")),
                 "email": auth.get("email", ""),
             },
-            "dialogs": listing,
+            "dialogs": listing if auth.get("access_token") else [],
             "vpn": vpn_config.listing(),
             "job": dict(self.job),
+            "jobs": {kind: dict(job) for kind, job in self.jobs.items()},
         }
 
-    def background(self, fn):
+    def background(self, fn, kind="operation"):
         with self.job_lock:
-            if self.job.get("running"):
-                raise ValueError("Дождитесь завершения текущей операции")
-            self.job = {"running": True}
+            if kind in self.running_jobs:
+                raise OperationBusy(
+                    "Эта операция уже выполняется. Дождитесь результата."
+                )
+            self.running_jobs.add(kind)
+            job = {"running": True, "kind": kind, "id": secrets.token_hex(8)}
+            self.job = job
+            self.jobs[kind] = job
 
         def run():
             try:
-                fn()
+                value = fn()
                 result = {"running": False, "ok": True}
+                if kind == "vpn-import" and isinstance(value, dict):
+                    result["servers"] = len(value.get("servers", []))
+                    result["skipped"] = value.get("skipped", 0)
             except Exception as e:
                 # Only our validation messages are exposed. Upstream errors can
                 # contain credentials, subscription URLs or callback codes.
@@ -68,7 +83,8 @@ class Application:
                     ),
                 }
             with self.job_lock:
-                self.job = result
+                self.running_jobs.discard(kind)
+                job.update(result)
 
         threading.Thread(target=run, daemon=True).start()
         return {"running": True}
@@ -120,31 +136,45 @@ class Application:
                 lambda: (
                     self.login.submit(data.get("callback", "")),
                     self.readiness.invalidate(),
-                )
+                ),
+                kind="login",
             )
         if path == "/api/logout":
             self.login.logout()
             self.readiness.invalidate()
             return {"ok": True}
         if path == "/api/check":
-            return self.background(lambda: self.readiness.check(actual_request=True))
+            return self.background(
+                lambda: self.readiness.check(actual_request=True), kind="check"
+            )
         if path == "/api/vpn/import":
             return self.background(
                 lambda: vpn_config.import_servers(
                     data.get("source", ""), data.get("subscription", False)
-                )
+                ),
+                kind="vpn-import",
             )
         if path == "/api/vpn/select":
             return self.background(
                 lambda: (
                     vpn_config.select_server(data.get("id")),
                     self.readiness.invalidate(),
-                )
+                ),
+                kind="vpn-select",
             )
         if path == "/api/vpn/mode":
-            result = update(vpn_mode=data.get("mode"))
-            self.readiness.invalidate()
-            return result
+            return self.background(
+                lambda: (
+                    vpn_config.set_mode(data.get("mode")),
+                    self.readiness.invalidate(),
+                ),
+                kind="vpn-mode",
+            )
+        if path == "/api/vpn/disconnect":
+            return self.background(
+                lambda: (vpn_config.set_mode("direct"), self.readiness.invalidate()),
+                kind="vpn-mode",
+            )
         if path.startswith("/api/dialog/"):
             return self.dialog_action(path.rsplit("/", 1)[1], data)
         raise ValueError("Неизвестная операция")
@@ -223,6 +253,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 raise ValueError("Неверный запрос")
             result = self.server.app.post(urllib.parse.urlsplit(self.path).path, data)
             self.respond(200, result)
+        except OperationBusy as error:
+            self.respond(409, {"error": str(error)})
         except (ValueError, KeyError, TypeError):
             self.respond(400, {"error": "Проверьте введённые данные"})
         except Exception:

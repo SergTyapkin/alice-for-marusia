@@ -16,11 +16,20 @@ from .recognizer import (
     drop_rec,
     F,
 )
-from .audio import ROOT, MPG, say, PHRASES
+from .audio import ROOT, MPG
 from .controls import ends_dialogue, no_speech_timeout, ShortTouch
 from .conversations import Dialogs
-from .openai_client import PlanSession
 from .speech import speech_worker
+from .workers import (
+    play_file,
+    play_activation,
+    play_text,
+    request_worker,
+    compact_worker,
+)
+
+# Fresh interpreters avoid reserving the recognizer heap for every child.
+mp = mp.get_context("spawn")
 from .indicators import IndicatorWorker
 from .wake import monitor_wake
 from .diagnostics import event, MarusyaMute
@@ -33,14 +42,6 @@ ASSETS = "/data/alisa/assets"
 def asset_path(name):
     mp3 = ASSETS + "/" + name + ".mp3"
     return mp3 if os.path.exists(mp3) else ASSETS + "/" + name + ".wav"
-
-
-for phrase, key in [("Думаю.", "thinking"), ("Такого диалога нет.", "no_dialog")] + [
-    ("Переключаюсь на диалог %d." % i, "switch-dialog-%d" % i) for i in range(1, 21)
-]:
-    path = ROOT + "/phrases/" + key + ".mp3"
-    if os.path.exists(path) and os.path.getsize(path):
-        PHRASES[phrase] = key
 
 
 def log(*args):
@@ -62,103 +63,6 @@ def stop_process(p):
             except (ProcessLookupError, PermissionError):
                 p.kill()
     p.join(timeout=0.5)
-
-
-def play_file(path):
-    os.setsid()
-    if path.endswith(".wav"):
-        subprocess.run(
-            ["paplay", "--latency-msec=40", "--device=master", path],
-            env=ENV,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=45,
-        )
-        return
-    wav = ROOT + "/cue-%d.wav" % os.getpid()
-    env = ENV.copy()
-    env["LD_LIBRARY_PATH"] = MPG + "/usr/lib/aarch64-linux-gnu"
-    try:
-        subprocess.run(
-            [MPG + "/usr/bin/mpg123.bin", "-q", "-e", "s16", "-w", wav, path],
-            env=env,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=20,
-        )
-        subprocess.run(
-            ["paplay", "--device=master", wav],
-            env=ENV,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=45,
-        )
-    finally:
-        try:
-            os.unlink(wav)
-        except FileNotFoundError:
-            pass
-
-
-def play_activation(path, guard):
-    guard.value = time.monotonic() + 5
-    try:
-        play_file(path)
-    finally:
-        guard.value = time.monotonic() + 1.0
-
-
-def play_text(text):
-    os.setsid()
-    say(text)
-
-
-def request_worker(snapshot, text, output, speech_input=None):
-    os.setsid()
-    try:
-
-        class StagedDialogs(Dialogs):
-            def save(self):
-                pass
-
-        dialogs = StagedDialogs.__new__(StagedDialogs)
-        dialogs.data = copy.deepcopy(snapshot)
-        dialogs.limit = 16000
-        dialogs.path = ""
-        on_delta = (
-            (lambda delta: speech_input.put(("delta", delta)))
-            if speech_input is not None
-            else None
-        )
-        answer = dialogs.ask(PlanSession(), text, on_delta=on_delta)
-        if speech_input is not None:
-            speech_input.put(("done", None))
-        output.put(("ok", answer, dialogs.data))
-    except Exception as e:
-        if speech_input is not None:
-            speech_input.put(("cancel", None))
-        output.put(("error", type(e).__name__))
-
-
-def compact_worker(snapshot, output):
-    os.setsid()
-    try:
-
-        class StagedDialogs(Dialogs):
-            def save(self):
-                pass
-
-        dialogs = StagedDialogs.__new__(StagedDialogs)
-        dialogs.data = copy.deepcopy(snapshot)
-        dialogs.limit = 16000
-        dialogs.path = ""
-        dialogs.compact(PlanSession())
-        output.put(dialogs.data)
-    except Exception as e:
-        print("COMPACTION_ERROR", type(e).__name__, flush=True)
 
 
 def monitor_touch(events, stop, touch_down):
@@ -733,7 +637,7 @@ def main():
                         )
                         if cue:
                             stop_process(cue)
-                        cue = start_process(play_text, "Думаю.")
+                        cue = start_process(play_text, "Думаю.", wake_guard)
                         phase = "working"
                     reset_wake()
                 continue

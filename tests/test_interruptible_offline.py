@@ -20,7 +20,7 @@ with patch.dict(
         "alice_for_marusia.audio": fake_controller,
     },
 ):
-    target = importlib.import_module("alice_for_marusia.app")
+    target = importlib.import_module("alice_for_marusia.workers")
 
 
 class Session:
@@ -35,8 +35,9 @@ class WorkerTests(unittest.TestCase):
     def test_request_stages_history_without_modifying_live_snapshot(self):
         data = {"current": "основной", "dialogs": {"основной": []}}
         out = queue.Queue()
-        with patch.object(target.os, "setsid", create=True), patch.object(
-            target, "PlanSession", Session
+        with (
+            patch.object(target.os, "setsid", create=True),
+            patch.object(target, "PlanSession", Session),
         ):
             target.request_worker(data, "тест", out)
         kind, answer, staged = out.get_nowait()
@@ -48,8 +49,9 @@ class WorkerTests(unittest.TestCase):
         data = {"current": "основной", "dialogs": {"основной": []}}
         out = queue.Queue()
         speech = queue.Queue()
-        with patch.object(target.os, "setsid", create=True), patch.object(
-            target, "PlanSession", Session
+        with (
+            patch.object(target.os, "setsid", create=True),
+            patch.object(target, "PlanSession", Session),
         ):
             target.request_worker(data, "тест", out, speech)
         self.assertEqual(

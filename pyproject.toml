@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "alice-for-marusia"
-version = "0.1.0"
+version = "0.1.1"
 description = "On-device GPT voice companion for the large VK Capsula"
 readme = "README.md"
 license = "MIT"

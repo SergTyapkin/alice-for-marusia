@@ -11,7 +11,7 @@ import sys
 import urllib.request
 import zipfile
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 
 def digest(data):
